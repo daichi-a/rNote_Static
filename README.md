@@ -10,7 +10,7 @@ Woody-Rinnさんの開発理念である「記事のXMLファイルと表示を�
 
 Python 3.9以降の標準ライブラリだけで動作します。例えばWindowsのMicrosoft StoreなどからPython本体をインストールすれば、仮想環境の構築やpipによる追加パッケージのインストールは不要です。
 
-旧rNote 0.9.7.5 の記事（entiresディレクトリ以下）・設定（rnote_config.php）・（entries以下の各ディレクトリの）skinを入力として、配信用の静的サイトを生成するPythonプログラムです。互換動作の基準は `rnote.php` 本体です。skinの見た目から意図を推測した自動修正は行いません。
+旧rNote 0.9.7.5 の記事（entriesディレクトリ以下）・設定（rnote_config.php）・（entries以下の各ディレクトリの）skinを入力として、配信用の静的サイトを生成するPythonプログラムです。互換動作の基準は `rnote.php` 本体です。skinの見た目から意図を推測した自動修正は行いません。
 
 Python 3.9以降の標準ライブラリだけで動作します。pip、仮想環境、追加パッケージ、PHP、データベース、Node.jsは不要です。配信サーバーには生成物だけを配置します。
 

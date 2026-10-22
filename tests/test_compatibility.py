@@ -178,6 +178,16 @@ class Compatibility(unittest.TestCase):
         self.assertEqual(page, '<p>Before</p><p>After</p>')
         self.assertTrue(any("POST form" in w for w in self.index.warnings))
 
+    def test_static_credit_uses_builder_version_without_changing_article(self):
+        self.write("entries/credit.skin", '<a href="<%=$rnote_url%>">Powered by rNote <%=$rnote_version%></a>')
+        self.write("entries/html_body.skin", '<%=$site_items%><%=$include url="entries/credit.skin"%>')
+        self.entry("work/credit.xml", "Credit", "2025-01-01", "Powered by rNote 0.9.7.5")
+        self.make_renderer()
+        page = self.renderer.page(Context("work/credit.htm"))
+        self.assertIn('Powered by rNote Static 0.9.7.5.1</a>', page)
+        self.assertIn('<div>Powered by rNote 0.9.7.5</div>', page)
+        self.assertEqual((self.root / "entries/credit.skin").read_text(encoding="utf-8"), '<a href="<%=$rnote_url%>">Powered by rNote <%=$rnote_version%></a>')
+
     def test_link_inventory_preserves_existing_broken_links_as_warnings(self):
         warnings = check_links({"work/a.htm": '<a href="/blog/work/">ok</a><img src="/blog/image/a.png"><a href="/blog/missing.htm">old</a>', "work/index.html": ""}, {"image/a.png": None}, self.config)
         self.assertEqual(warnings, {"local link target absent from output: /blog/missing.htm"})

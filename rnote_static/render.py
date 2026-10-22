@@ -2,6 +2,7 @@
 import html
 import re
 
+from . import __version__
 from .common import (BuildError, date_string, ext_change, prefix, read_text,
                      reject_php, split_path, strip_tags, truth, xml_tag, php_int)
 from .selection import Context, select
@@ -230,6 +231,8 @@ class Renderer:
             raise BuildError(f"missing category: {directory}")
         text = self.skins.includes(self.skins.load(body or self.index.dirs[directory].body))
         text = self.skins.macros(text, context)
+        # Update the engine credit in skin text before inserting article content.
+        text = re.sub(r"\brNote(?=\s+<%=\$rnote_version\b)", "rNote Static", text)
         fi = None
         def items(opt):
             nonlocal fi
@@ -277,7 +280,7 @@ class Renderer:
                   "site_title": self.c["SITE_TITLE"], "site_entrytitle": " - " + title if title else "",
                   "site_url": self.c["SITE_URL"], "site_charset": self.c["SITE_CHARSET"],
                   "site_lang": self.c["SITE_LANG"], "site_author": self.c["SITE_AUTHOR"],
-                  "rnote_version": "0.9.7.5", "rnote_url": "http://rinn.e-site.jp/rnote/"}
+                  "rnote_version": __version__, "rnote_url": "http://rinn.e-site.jp/rnote/"}
         for name, value in values.items():
             text = replace_tags(text, name, lambda o, v=value: v)
         def plugin(opt):

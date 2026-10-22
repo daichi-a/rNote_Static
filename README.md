@@ -19,7 +19,7 @@ Python 3.9以降の標準ライブラリだけで動作します。例えばWind
 `rnote_static_build.py` と `rnote_static/` を、既存の `rnote.php`、`rnote_config.php`、`entries/`、`style/` のあるディレクトリに配置して実行します。
 
 ```console
-python rnote_static_build.py
+$ python rnote_static_build.py
 ```
 
 進捗を標準出力に表示する場合は `python rnote_static_build.py -v` とします。経過時間、記事の読込件数、HTML生成、リンク変換、入力検証、ファイル出力・コピーの状況を順次表示します。`-vv` では個々の入力・出力ファイルも表示します。
@@ -29,7 +29,7 @@ python rnote_static_build.py
 プログラムと入力を別の場所に置くこともできます。
 
 ```console
-python rnote_static_build.py --source "C:\path\to\legacy-site"
+$ python rnote_static_build.py --source "C:\path\to\legacy-site"
 ```
 
 出力先は既定で入力ルートの `public/` です。既存の入力ファイルは変更しません。サイトのPHPを実行せず、ビルド中のネットワークアクセスも行いません。
@@ -39,9 +39,9 @@ python rnote_static_build.py --source "C:\path\to\legacy-site"
 ### 検査とオプション
 
 ```console
-python rnote_static_build.py --source "C:\path\to\legacy-site" --check
-python rnote_static_build.py --source "C:\path\to\legacy-site" --output "C:\path\to\build\public" --report "C:\path\to\build\report.json"
-python rnote_static_build.py --source "C:\path\to\legacy-site" --site-url "https://example.org/blog/"
+$ python rnote_static_build.py --source "C:\path\to\legacy-site" --check
+$ python rnote_static_build.py --source "C:\path\to\legacy-site" --output "C:\path\to\build\public" --report "C:\path\to\build\report.json"
+$ python rnote_static_build.py --source "C:\path\to\legacy-site" --site-url "https://example.org/blog/"
 ```
 
 | オプション | 内容 |
@@ -152,19 +152,17 @@ RSSは `rss_body.skin` とそこから指定されたitem/sequence skinを使っ
 
 ### 静的アセット
 
-既定でコピーするアセットは `style/` だけです。`entries/` は記事XMLとskinの入力として使用し、付属アセットはコピーしません。`image/`、`data/`、`WebApps/` などの任意ディレクトリは走査・読込・コピーしません。CSSの参照URLだけはローカル表示のため相対化し、文字コードを維持します。HTMLを含むその他のコピー対象ファイルはバイト列を維持し、手書きHTMLのリンク変換・リンク検査は行いません。入力側のファイルは変更しません。
+既定でコピーするアセットは `style/` だけです。`entries/` は記事XMLとskinの入力として使用し、付属アセットはコピーしません。rNoteでは取り扱わない画像などのディレクトリは、同じ階層にあっても走査・読込・コピーしません。CSSの参照URLだけはローカル表示のため相対化し、文字コードを維持します。HTMLを含むその他のコピー対象ファイルはバイト列を維持し、手書きHTMLのリンク変換・リンク検査は行いません。入力側のファイルは変更しません。
 
-PHP・CGIなどのサーバープログラム、skin、ログ、キャッシュ、INI、バックアップ、隠しファイルは配布対象外です。`.log`・`.ref`・`.referer`・`_ref.txt`・`comments.txt` などの過去コメント・リファラ・TrackBack関連データもコピーしません。関連データ用のディレクトリも除外します。アセットディレクトリが別名なら `--asset-dir` で指定してください。任意のルートファイルを無差別にコピーする処理はありません。サーバープログラムが必要なWebアプリを静的化する機能もありません。
+PHP・CGIなどのサーバープログラム、skin、ログ、キャッシュ、INI、バックアップ、隠しファイルは配布対象外です。entriesディレクトリの中に残っている、rNoteが生成した、`.log`・`.ref`・`.referer`・`_ref.txt`・`comments.txt` などの過去コメント・リファラ・TrackBack関連データも使用しません。アセットディレクトリが別名なら `--asset-dir` で指定してください。
 
-skinと記事を旧処理に沿って展開した後、HTMLのhref・src・poster・data・action・srcset、インラインCSS、CSSのurlとimportをファイル相対へ変換します。scriptタグのsrcも対象ですが、JavaScript本文や記事の説明文を文字列置換することはありません。コピーしたCSSの相対リンクは、そのCSS自身の場所を基準に扱います。手書きHTMLは書き換えません。記事内の `$site_link/` と `$site_link_full/`、`$$` によるエスケープにも対応します。
+skinと記事をrNote0.9.7.5の処理に沿って展開した後、HTMLのhref・src・poster・data・action・srcset、インラインCSS、CSSのurlとimportをファイル相対へ変換します。scriptタグのsrcも対象ですが、JavaScript本文や記事の説明文を文字列置換することはありません。コピーしたCSSの相対リンクは、そのCSS自身の場所を基準に扱います。手書きHTMLは書き換えません。記事内の `$site_link/` と `$site_link_full/`、`$$` によるエスケープにも対応します。
 
-内部リンクのうち、生成対象として把握できるページと管理するアセットディレクトリ（既定style/）を検査します。style/内の欠落は警告として報告します。image/、教材、既存の手書き.htmなど管理対象外のリンクは検査せず、欠落警告も出しません。.htmという拡張子だけでrNoteの記事と判定しません。管理対象外の元ファイルや配置先を参照して存在確認することもありません。元から壊れているリンクは修復しません。外部サイトの到達性、JavaScriptで動的生成するURL、CSSからの参照、ページ内アンカーの存在は検査しません。
+内部リンクのうち、生成対象として把握できるページと管理するアセットディレクトリ（既定style/）を検査します。style/内の欠落は警告として報告します。entriesなどに混在していた既存の手書き.htmなど管理対象外のリンクは検査せず、欠落警告も出しません。.htmという拡張子だけでrNoteの記事と判定しません。管理対象外の元ファイルや配置先を参照して存在確認することもありません。元から壊れているリンクは修復しません。外部サイトの到達性、JavaScriptで動的生成するURL、CSSからの参照、ページ内アンカーの存在は検査しません。
 
 ## PHP禁止と削除機能
 
 PHP本体、PHP短縮タグ、PHPの出力を実行する経路はありません。`eval`、PHPインタープリター、外部評価サービスも使いません。公開される内容からPHP構文を検出すると、ファイル名と行番号付きで停止します。XML宣言の `<?xml ... ?>` は許可します。検出は保守的で、JavaScript内のPHP開始タグ文字列なども停止対象になります。
-
-移行前の入力には `entries/private/html_head.skin` にPHP短縮タグがありました。このような入力をそのままビルドすると**終了コード1で停止します**。PHPを黙って削除したり、特定コードを代行評価したりはしません。調査対象の原本では、所有者の許可によりこのPHPブロックとskinの閉じ記号を別途修正済みです。ビルダー自身が入力を修正することはありません。
 
 既存入力を変更せずに他カテゴリを確認する場合は、明示的な部分ビルドができます。
 
@@ -186,10 +184,6 @@ python -m unittest discover -s tests -v
 
 元サイトとのバイト単位の一致を検証するためにPHPを実行するテストはありません。互換性は旧ソースの読解から導いた規則と、合成フィクスチャ・実データの静的検査で検証します。
 
-0.9.7.5.1では合成テスト31件が成功しました。ファイル相対リンク、生成HTMLの.htm統一、index.xmlがある場合の入口兼用、過去ログの非出力、任意ディレクトリの非読込、コピーするHTMLのバイト列維持、CSSの文字コード維持、.htaccessの生成、リンクとロゴのないクレジット、標準出力への進捗表示を確認しています。テストはPHPを実行せずに行います。元から存在しないリンクは診断レポートの警告として残ります。
-
-実データの従来検証では、858記事・168ディレクトリから生成HTML1,413ファイルとRSS1ファイルを確認しています。index.xmlのある8ディレクトリの出力は実skinによる描画と一致しています。コピー対象をstyleだけに限定し、画像・教材・手書きHTMLなど別途配置するファイルの存在は検査せず、出力一覧にないことを理由とする警告も出しません。任意ディレクトリの走査は行いません。
-
 ## モジュール
 
 | ファイル | 役割 |
@@ -205,4 +199,3 @@ python -m unittest discover -s tests -v
 | `rnote_static/validation.py` | 出力一覧を使う内部リンク検査 |
 | `rnote_static/local_links.py` | HTML・CSSのファイル相対リンク化、旧クエリURL対応、アセット文字コード |
 | `rnote_static/build.py` | 全体制御、アセットコピー、段階的出力 |
-

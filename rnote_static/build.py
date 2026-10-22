@@ -177,7 +177,7 @@ def build(args):
             if changed != text:
                 transformed_assets[name] = changed.encode(encoding)
     progress("Validate local link targets")
-    index.warnings.update(check_links(html_for_validation, copied, config))
+    index.warnings.update(check_links(html_for_validation, copied, config, args.asset_dir or ["style"]))
     progress("Verify input files are unchanged")
     index.verify_unchanged()
     report = {"builder_version": __version__, "entries": len(index.entries), "categories": len(index.dirs), "pages": len(pages),

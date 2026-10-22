@@ -15,8 +15,14 @@ class References(HTMLParser):
                 self.urls.add(value)
 
 
-def check_links(pages, assets, config):
+def check_links(pages, assets, config, managed_roots=()):
+    """Validate only builder-owned targets; other site files are user-managed.
+
+    Do not probe the source or deployment filesystem for unmanaged links.
+    A .htm extension alone does not establish that rNote owns a target.
+    """
     available = set(pages) | set(assets)
+    roots = tuple(normpath(str(root)).strip("/") + "/" for root in managed_roots)
     warnings = set()
     site = urlsplit(config["SITE_URL"])
     for page, text in pages.items():
@@ -37,9 +43,12 @@ def check_links(pages, assets, config):
             path = normpath(path[len(config.base):]).lstrip("/")
             if path == ".":
                 path = ""
+            known = path in available or any((path.rstrip("/") + "/" + index).lstrip("/") in available for index in ("index.htm", "index.html"))
+            if not known and not any(path == root.rstrip("/") or path.startswith(root) for root in roots):
+                continue
             if parsed.query:
                 warnings.add(f"legacy query URL requires a hosting redirect: {value}")
-            if path in available or any((path.rstrip("/") + "/" + index).lstrip("/") in available for index in ("index.htm", "index.html")):
+            if known:
                 continue
             warnings.add(f"local link target absent from output: {value}")
     return warnings

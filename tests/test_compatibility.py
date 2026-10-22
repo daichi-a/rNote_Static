@@ -196,8 +196,17 @@ class Compatibility(unittest.TestCase):
         self.assertEqual((self.root / "entries/credit.skin").read_text(encoding="utf-8"), skin)
 
     def test_link_inventory_preserves_existing_broken_links_as_warnings(self):
-        warnings = check_links({"work/a.htm": '<a href="/blog/work/">ok</a><img src="/blog/image/a.png"><a href="/blog/missing.htm">old</a>', "work/index.html": ""}, {"image/a.png": None}, self.config)
-        self.assertEqual(warnings, {"local link target absent from output: /blog/missing.htm"})
+        warnings = check_links({"work/a.htm": '<a href="/blog/work/">ok</a><img src="/blog/image/a.png"><a href="/blog/style/missing.css">old</a>', "work/index.html": ""}, {"image/a.png": None}, self.config, ["style"])
+        self.assertEqual(warnings, {"local link target absent from output: /blog/style/missing.css"})
+
+    def test_unmanaged_targets_are_not_reported_as_missing(self):
+        page = '''<img src="../../../../../image/example.png">
+<a href="../../../../../private/ex/tool.tar.gz">Archive</a>
+<a href="../../../../../techinfo/rnote/textwithimage.htm">Manual</a>
+<a href="../../../../../style-other/manual.html?topic=1">Manual query</a>
+<link href="../../../../../style/missing.css">'''
+        warnings = check_links({"work/class/topic/sub/deep/item.htm": page}, {}, self.config, ["style"])
+        self.assertEqual(warnings, {"local link target absent from output: ../../../../../style/missing.css"})
 
     def test_category_plugin_literal_settings(self):
         self.write("plugins/navitools.php", "<?php $this->category_pos['work']=1; $this->secret_category[]='hidden'; ?>")

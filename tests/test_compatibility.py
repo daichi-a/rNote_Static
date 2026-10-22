@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rnote_static.build import main, safe_output
+from rnote_static import __version__
+from rnote_static.build import main, safe_output, private_asset
 from rnote_static.common import BuildError, date_string, parse_date, reject_php, split_path, xml_tag
 from rnote_static.config import Config, expression
 from rnote_static.entries import Index
@@ -13,6 +14,7 @@ from rnote_static.selection import Context, select
 from rnote_static.skins import Skins, find_tag, options
 from rnote_static.urls import URLs, absolute_assets
 from rnote_static.validation import check_links
+from rnote_static.local_links import LocalLinks, legacy_context, decode_asset
 
 
 CONFIG = """<?php
@@ -67,7 +69,7 @@ class Compatibility(unittest.TestCase):
         self.config = Config(self.root)
         self.index = Index(self.config)
         self.skins = Skins(self.config, self.index)
-        self.urls = URLs(self.config)
+        self.urls = URLs(self.config, self.index)
         self.renderer = Renderer(self.config, self.index, self.skins, self.urls)
 
     def test_configuration_literals_and_no_execution(self):
@@ -119,7 +121,7 @@ class Compatibility(unittest.TestCase):
         page = self.renderer.page(Context("work/"))
         self.assertIn('/blog/work/_page/2/', page)
         self.assertIn(Context("work/", "", 1), self.renderer.requests)
-        self.assertEqual(self.urls.output(Context("work/", "2020-01", 1)), "work/_date/2020-01/_page/2/index.html")
+        self.assertEqual(self.urls.output(Context("work/", "2020-01", 1)), "work/_date/2020-01/_page/2/index.htm")
         self.assertEqual(self.urls.link("work/a.xml", full=True), "https://example.test/blog/work/a.htm")
 
     def test_legacy_explicit_date_bug_is_retained(self):
@@ -184,7 +186,7 @@ class Compatibility(unittest.TestCase):
         self.entry("work/credit.xml", "Credit", "2025-01-01", "Powered by rNote 0.9.7.5")
         self.make_renderer()
         page = self.renderer.page(Context("work/credit.htm"))
-        self.assertIn('Powered by rNote Static 0.9.7.5.1</a>', page)
+        self.assertIn(f'Powered by rNote Static {__version__}</a>', page)
         self.assertIn('<div>Powered by rNote 0.9.7.5</div>', page)
         self.assertEqual((self.root / "entries/credit.skin").read_text(encoding="utf-8"), '<a href="<%=$rnote_url%>">Powered by rNote <%=$rnote_version%></a>')
 
@@ -220,16 +222,96 @@ class Compatibility(unittest.TestCase):
         before = {str(p): hashlib.sha256(p.read_bytes()).digest() for p in self.root.rglob("*") if p.is_file()}
         self.assertEqual(main(["--source", str(self.root), "--output", str(output)]), 0)
         self.assertTrue((output / "work/a.htm").is_file())
-        self.assertTrue((output / "work/_page/2/index.html").is_file())
-        self.assertEqual((output / "index.html").read_bytes(), (output / "index.htm").read_bytes())
+        self.assertTrue((output / "work/_page/2/index.htm").is_file())
+        self.assertTrue((output / "index.htm").is_file())
+        self.assertFalse(list(output.rglob("*.html")))
         self.assertTrue((output / "rss.rdf").is_file())
         self.assertEqual(main(["--source", str(self.root), "--output", str(output)]), 0)
         after = {str(p): hashlib.sha256(p.read_bytes()).digest() for p in self.root.rglob("*") if p.is_file()}
         self.assertEqual(before, after)
-        old = (output / "index.html").read_bytes()
+        old = (output / "index.htm").read_bytes()
         self.write("entries/html_body.skin", "<?php forbidden ?>")
         self.assertEqual(main(["--source", str(self.root), "--output", str(output)]), 1)
-        self.assertEqual((output / "index.html").read_bytes(), old)
+        self.assertEqual((output / "index.htm").read_bytes(), old)
+
+    def test_file_relative_links_cover_navigation_and_resources(self):
+        available = {"index.htm", "work/index.htm", "work/a.htm", "style/a.css", "style/a.js", "image/a.png", "rss.rdf"}
+        linker = LocalLinks(self.config, self.urls, available)
+        page = linker.html('''<a href="/blog/">Home</a><a href="https://example.test/blog/work/">Works</a>
+<a href="/blog/work/a.htm#section">Article</a><link href="style/a.css"><script src='/blog/style/a.js'></script>
+<img src="/blog/image/a.png"><a href="https://outside.test/blog/">Outside</a><a href="#here">Anchor</a>''', "work/sub/b.htm")
+        self.assertIn('href="../../index.htm"', page)
+        self.assertIn('href="../index.htm"', page)
+        self.assertIn('href="../a.htm#section"', page)
+        self.assertIn('href="../../style/a.css"', page)
+        self.assertIn('src="../../style/a.js"', page)
+        self.assertIn('src="../../image/a.png"', page)
+        self.assertIn('href="https://outside.test/blog/"', page)
+        self.assertIn('href="#here"', page)
+
+    def test_copied_manual_html_and_css_keep_their_own_relative_base(self):
+        linker = LocalLinks(self.config, self.urls, {"WebApps/sample/index.html", "WebApps/shared.js", "image/a.png", "style/bg.png"})
+        page = linker.html('<script src="../shared.js"></script><img src="/blog/image/a.png">', "WebApps/sample/index.html", site_relative=False)
+        self.assertIn('src="../shared.js"', page)
+        self.assertIn('src="../../image/a.png"', page)
+        self.assertEqual(linker.css('a{background:url("/blog/image/a.png")}b{background:url(bg.png)}', "style/a.css"), 'a{background:url("../image/a.png")}b{background:url(bg.png)}')
+        self.assertEqual(linker.reference("data:image/png;base64,abc", "a.htm"), "data:image/png;base64,abc")
+
+    def test_relative_rewriter_does_not_edit_script_or_article_text(self):
+        linker = LocalLinks(self.config, self.urls, {"index.htm"})
+        raw = '''<script>const s='<a href="/blog/">';</script><p>/blog/ is a textual example.</p>'''
+        self.assertEqual(linker.html(raw, "work/a.htm"), raw)
+
+    def test_legacy_query_links_have_static_file_targets(self):
+        target = "work/_date/2020/_page/2/index.htm"
+        linker = LocalLinks(self.config, self.urls, {target})
+        state = legacy_context("/blog/work/?d=2020&p=1", self.config)
+        self.assertEqual(state, Context("work/", "2020", 1))
+        self.assertEqual(linker.reference("/blog/work/?d=2020&amp;p=1#x", "work/sub/a.htm"), "../_date/2020/_page/2/index.htm#x")
+        self.assertIsNone(legacy_context("https://outside.test/?p=1", self.config))
+        self.assertIsNone(legacy_context("/blog/?m=wb_write", self.config))
+
+    def test_historical_logs_are_not_copied_or_rendered(self):
+        for name in ("entries/work/a.log", "entries/work/a_ref.txt", "entries/work/referer.txt", "style/comments/2020.txt", "data/old.ref"):
+            self.write(name, "HISTORICAL_PRIVATE_MARKER")
+            self.assertTrue(private_asset(name))
+        self.write("image/a.png", "image-fixture")
+        output = self.root.parent / "public"
+        self.assertEqual(main(["--source", str(self.root), "--output", str(output)]), 0)
+        self.assertTrue((output / "image/a.png").is_file())
+        for path in output.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(b"HISTORICAL_PRIVATE_MARKER", path.read_bytes())
+                self.assertFalse(path.suffix in {".log", ".ref"})
+        article = (output / "work/a.htm").read_text(encoding="utf-8")
+        self.assertIn('src="../image/a.png"', article)
+        self.assertIn('href="index.htm"', article)
+
+    def test_authored_shift_jis_html_preserves_its_encoding(self):
+        text = '<meta charset="Shift_JIS"><p>日本語の説明</p><img src="/blog/image/a.png">'
+        raw = text.encode("cp932")
+        decoded, encoding = decode_asset(raw)
+        self.assertEqual(decoded, text)
+        linker = LocalLinks(self.config, self.urls, {"image/a.png"})
+        changed = linker.html(decoded, "style/readme.html", site_relative=False)
+        self.assertIn('src="../image/a.png"', changed)
+        self.assertIn("日本語の説明", changed.encode(encoding).decode("cp932"))
+
+    def test_index_xml_owns_directory_entry_point_and_uses_its_skin(self):
+        self.entry("work/index.xml", "Cover", "2025-01-01", "Cover article")
+        self.write("entries/work/html_body.skin", '<%=$site_items url="work/index.htm" num="1"%>')
+        self.make_renderer()
+        self.assertEqual(self.urls.output(Context("work/index.htm")), "work/index.htm")
+        self.assertEqual(self.urls.output(Context("work/")), "work/index.htm")
+        self.assertEqual(self.renderer.page(Context("work/")), self.renderer.page(Context("work/index.htm")))
+        linker = LocalLinks(self.config, self.urls, {"work/index.htm"})
+        self.assertEqual(linker.reference("/blog/work/", "other/a.htm"), "../work/index.htm")
+        self.assertEqual(linker.reference("/blog/work/index.htm", "other/a.htm"), "../work/index.htm")
+        output = self.root.parent / "public"
+        self.assertEqual(main(["--source", str(self.root), "--output", str(output)]), 0)
+        self.assertTrue((output / "work/index.htm").is_file())
+        self.assertFalse((output / "work/_category.htm").exists())
+        self.assertIn("Cover article", (output / "work/index.htm").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -6,8 +6,15 @@ from .common import BuildError
 
 
 class URLs:
-    def __init__(self, config):
+    def __init__(self, config, index=None):
         self.config = config
+        self.directory_indexes = {}
+        self.index_articles = set()
+        if index is not None:
+            for directory in index.dirs:
+                self.directory_indexes[directory] = "index.htm"
+                if directory + "index" + config["EXT_DOCUMENT"] in index.entries:
+                    self.index_articles.add(directory)
 
     def relative(self, url="", date="", page=0):
         url = url.lstrip("/").replace(self.config["EXT_DOCUMENT"], self.config["EXT_ACCESS"])
@@ -29,7 +36,7 @@ class URLs:
 
     def output(self, context):
         path = self.relative(context.url, context.date, context.page)
-        return path + "index.html" if not path or path.endswith("/") else path
+        return path + self.directory_indexes.get(path, "index.htm") if not path or path.endswith("/") else path
 
     def rss(self):
         return self.config["SITE_URL"] + self.config["FNAME_RSS"]

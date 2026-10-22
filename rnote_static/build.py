@@ -1,13 +1,14 @@
 """Command-line orchestration, staged output, and source verification."""
 import argparse
 import json
+import re
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 
 from . import __version__
-from .common import BuildError, reject_php
+from .common import BuildError, reject_php, split_path, ext_change
 from .config import Config
 from .entries import Index
 from .render import Renderer
@@ -15,12 +16,25 @@ from .selection import Context
 from .skins import Skins
 from .urls import URLs
 from .validation import check_links
+from .local_links import LocalLinks, legacy_context, decode_asset
+from .validation import References
 
 
 MARKER = ".rnote-static-output"
 SERVER_SUFFIXES = {".php", ".php3", ".php4", ".php5", ".phtml", ".phar", ".cgi", ".pl", ".asp", ".aspx"}
-PRIVATE_SUFFIXES = {".skin", ".log", ".cache", ".ini", ".bak"}
+PRIVATE_SUFFIXES = {".skin", ".log", ".cache", ".ini", ".bak", ".ref", ".refs", ".referer", ".wb", ".tb"}
 TEXT_SUFFIXES = {".html", ".htm", ".css", ".js", ".svg", ".txt", ".xml", ".json", ".csv"}
+
+
+def private_asset(relative):
+    """Never deploy historical interaction data, regardless of its extension."""
+    path = Path(relative)
+    if path.suffix.lower() in PRIVATE_SUFFIXES | SERVER_SUFFIXES:
+        return True
+    names = {"ref", "refs", "referer", "referers", "referrer", "referrers", "writeback", "trackback", "comments", "comment"}
+    if any(part.lower() in names for part in path.parts[:-1]):
+        return True
+    return bool(re.search(r"(?:^|[_.-])(?:ref|refs|referer|referrer|writeback|trackback|comments?)(?:[_.-]|$)", path.name, re.I))
 
 
 def safe_output(source, output, data):
@@ -55,7 +69,7 @@ def assets(config, index, roots):
             if not child.is_file():
                 continue
             suffix = child.suffix.lower()
-            if suffix in SERVER_SUFFIXES or suffix in PRIVATE_SUFFIXES:
+            if private_asset(rel):
                 index.warnings.add(f"server/private asset excluded: {rel.as_posix()}")
                 continue
             index.remember(child)
@@ -66,7 +80,7 @@ def assets(config, index, roots):
     # Assets stored alongside entries retain their actual entries/... location.
     if config.data.is_relative_to(config.source):
         for child in config.data.rglob("*"):
-            if not child.is_file() or child.suffix.lower() in PRIVATE_SUFFIXES | SERVER_SUFFIXES | {config["EXT_DOCUMENT"].lower()}:
+            if not child.is_file() or private_asset(child.relative_to(config.data)) or child.suffix.lower() == config["EXT_DOCUMENT"].lower():
                 continue
             if any(part.startswith(".") for part in child.relative_to(config.data).parts):
                 continue
@@ -83,13 +97,15 @@ def assets(config, index, roots):
 
 def build(args):
     config = Config(args.source, args.site_url)
+    # Generated pages identify rNote output independently of authored .html assets.
+    config["EXT_ACCESS"] = ".htm"
     output = safe_output(config.source, Path(args.output).resolve() if args.output else config.source / "public", config.data)
     index = Index(config, args.exclude_category)
     for name in ("rnote_config.php", "rnote.php", "htaccess", ".htaccess"):
         path = config.source / name
         if path.is_file():
             index.remember(path)
-    urls = URLs(config)
+    urls = URLs(config, index)
     renderer = Renderer(config, index, Skins(config, index), urls)
     requests = {Context(d) for d in index.dirs} | {Context(n.replace(config["EXT_DOCUMENT"], config["EXT_ACCESS"])) for n in index.entries}
     done, pages, failures = set(), {}, set()
@@ -99,6 +115,10 @@ def build(args):
         if context in done:
             continue
         done.add(context)
+        # index.xml already has an ordinary article request for this exact path.
+        # Avoid a duplicate directory output; never override site_items selection.
+        if context.url in urls.index_articles and not context.date and not context.page and not context.mode:
+            continue
         if len(done) > args.max_pages:
             raise BuildError(f"page limit exceeded ({args.max_pages}); check skin navigation")
         renderer.requests.clear()
@@ -110,6 +130,14 @@ def build(args):
             text = renderer.page(context)
             pages[target] = text
             requests.update(renderer.requests - done)
+            refs = References()
+            refs.feed(text)
+            for value in refs.urls:
+                legacy = legacy_context(value, config)
+                if legacy is not None and legacy not in done:
+                    directory, filename = split_path(legacy.url)
+                    if directory in index.dirs and (not filename or ext_change(legacy.url, config["EXT_DOCUMENT"]) in index.entries) and legacy.page < max(1, len(index.entries)):
+                        requests.add(legacy)
         except (BuildError, ValueError) as exc:
             failures.add(str(exc))
     try:
@@ -122,18 +150,33 @@ def build(args):
         copied = assets(config, index, args.asset_dir or ["style", "image", "data", "WebApps"])
     except BuildError as exc:
         failures.add(str(exc))
-    if "index.html" in pages:
-        if "index.htm" in pages:
-            failures.add("top-page alias conflicts with article index.htm")
-        else:
-            pages["index.htm"] = pages["index.html"]
     for name in copied:
         if name in pages:
             failures.add(f"asset/page collision: {name}")
-    index.warnings.update(check_links(pages, copied, config))
+    linker = LocalLinks(config, urls, set(pages) | set(copied))
+    for name in pages:
+        if name.endswith((".htm", ".html")):
+            pages[name] = linker.html(pages[name], name)
+    transformed_assets = {}
+    html_for_validation = dict(pages)
+    for name, source in copied.items():
+        if source.suffix.lower() in {".html", ".htm", ".css"}:
+            original = source.read_bytes()
+            try:
+                text, encoding = decode_asset(original, config["SITE_CHARSET"])
+            except BuildError as exc:
+                raise BuildError(f"cannot rewrite asset links in {source}: {exc}") from exc
+            changed = linker.css(text, name) if source.suffix.lower() == ".css" else linker.html(text, name, site_relative=False)
+            if changed != text:
+                transformed_assets[name] = changed.encode(encoding)
+            if source.suffix.lower() in {".html", ".htm"}:
+                html_for_validation[name] = changed
+    index.warnings.update(check_links(html_for_validation, copied, config))
     index.verify_unchanged()
     report = {"builder_version": __version__, "entries": len(index.entries), "categories": len(index.dirs), "pages": len(pages),
               "assets": len(copied), "excluded_categories": list(index.excluded),
+              "generated_html_paths": sorted(n for n in pages if n.endswith((".htm", ".html"))),
+              "copied_asset_paths": sorted(copied),
               "warnings": sorted(index.warnings), "errors": sorted(failures),
               "source_verified_unchanged": True, "written": False}
     if not failures and not args.check:
@@ -152,7 +195,10 @@ def build(args):
                 if not target.is_relative_to(staging):
                     raise BuildError(f"asset path escapes output: {name}")
                 target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, target)
+                if name in transformed_assets:
+                    target.write_bytes(transformed_assets[name])
+                else:
+                    shutil.copy2(source, target)
             (staging / MARKER).write_text(f"Generated by rnote_static {__version__}; safe to rebuild.\n", encoding="utf-8")
             index.verify_unchanged()
             backup = None

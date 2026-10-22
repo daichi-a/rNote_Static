@@ -39,7 +39,7 @@ def check_links(pages, assets, config):
                 path = ""
             if parsed.query:
                 warnings.add(f"legacy query URL requires a hosting redirect: {value}")
-            if path in available or (path.rstrip("/") + "/index.html").lstrip("/") in available:
+            if path in available or any((path.rstrip("/") + "/" + index).lstrip("/") in available for index in ("index.htm", "index.html")):
                 continue
             warnings.add(f"local link target absent from output: {value}")
     return warnings

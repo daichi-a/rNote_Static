@@ -208,16 +208,3 @@ python -m unittest discover -s tests -v
 | `rnote_static/local_links.py` | HTML・CSSのファイル相対リンク化、旧クエリURL対応、アセット文字コード |
 | `rnote_static/build.py` | 全体制御、アセットコピー、段階的出力 |
 
-## 公開用Gitリポジトリ
-
-既存サイトのルートをGitHubへそのまま追加しないでください。独立したディレクトリに上記Pythonソース、`tests/test_compatibility.py`、このREADMEだけを置いて管理します。設定ファイル、記事、skin、画像、教材、`public/`、検証レポート、`__pycache__/` を含めません。
-
-公開前には次のコマンドで追跡対象を確認できます。
-
-```console
-git status --short
-git ls-files
-git log -1 --oneline
-```
-
-GitHubリポジトリの作成、remoteの追加、pushは利用者側で行います。配信用サイトをアップロードする場合も、GitHub公開用プログラムと `public/` は別の成果物として扱ってください。

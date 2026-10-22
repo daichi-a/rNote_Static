@@ -287,7 +287,7 @@ class Compatibility(unittest.TestCase):
         self.write("image/a.png", "image-fixture")
         output = self.root.parent / "public"
         self.assertEqual(main(["--source", str(self.root), "--output", str(output)]), 0)
-        self.assertTrue((output / "image/a.png").is_file())
+        self.assertFalse((output / "image/a.png").exists())
         for path in output.rglob("*"):
             if path.is_file():
                 self.assertNotIn(b"HISTORICAL_PRIVATE_MARKER", path.read_bytes())
@@ -295,6 +295,22 @@ class Compatibility(unittest.TestCase):
         article = (output / "work/a.htm").read_text(encoding="utf-8")
         self.assertIn('src="../image/a.png"', article)
         self.assertIn('href="index.htm"', article)
+
+    def test_only_style_assets_are_copied_by_default(self):
+        for name in ("image/a.png", "data/table.csv", "WebApps/app.html", "entries/work/manual.html"):
+            self.write(name, "<?php OUTSIDE_ASSET_MUST_NOT_BE_READ ?>")
+        original = '<meta charset="Shift_JIS"><a href="/blog/">manual</a>'
+        self.write("style/manual.html", original)
+        self.write("style/a.css", 'a{background:url(/blog/style/bg.png)}')
+        self.write("style/bg.png", "background")
+        output = self.root.parent / "public"
+        report = self.root.parent / "report.json"
+        self.assertEqual(main(["--source", str(self.root), "--output", str(output), "--report", str(report)]), 0)
+        self.assertEqual((output / "style/manual.html").read_bytes(), (self.root / "style/manual.html").read_bytes())
+        self.assertIn('url("bg.png")', (output / "style/a.css").read_text(encoding="utf-8"))
+        for name in ("image", "data", "WebApps", "entries"):
+            self.assertFalse((output / name).exists())
+        self.assertNotIn("local link target absent from output: /blog/", report.read_text(encoding="utf-8"))
 
     def test_authored_shift_jis_html_preserves_its_encoding(self):
         text = '<meta charset="Shift_JIS"><p>日本語の説明</p><img src="/blog/image/a.png">'

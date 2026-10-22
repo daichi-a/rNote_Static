@@ -82,21 +82,6 @@ def assets(config, index, roots):
             found[rel.as_posix()] = child
             if len(found) % 100 == 0:
                 index.progress(f"Assets: {len(found)} files indexed")
-    # Assets stored alongside entries retain their actual entries/... location.
-    if config.data.is_relative_to(config.source):
-        for child in config.data.rglob("*"):
-            if not child.is_file() or private_asset(child.relative_to(config.data)) or child.suffix.lower() == config["EXT_DOCUMENT"].lower():
-                continue
-            if any(part.startswith(".") for part in child.relative_to(config.data).parts):
-                continue
-            if index.is_excluded(child.relative_to(config.data).as_posix()):
-                continue
-            if child.is_symlink():
-                raise BuildError(f"asset symlink is unsupported: {child}")
-            index.remember(child)
-            if child.suffix.lower() in TEXT_SUFFIXES:
-                reject_php(child.read_bytes().decode("utf-8", errors="replace"), child)
-            found[child.relative_to(config.source).as_posix()] = child
     return found
 
 
@@ -165,7 +150,7 @@ def build(args):
     copied = {}
     progress("Collect static assets (historical logs excluded)")
     try:
-        copied = assets(config, index, args.asset_dir or ["style", "image", "data", "WebApps"])
+        copied = assets(config, index, args.asset_dir or ["style"])
     except BuildError as exc:
         failures.add(str(exc))
     for name in copied:
@@ -180,19 +165,17 @@ def build(args):
             progress(f"Convert links: {number}/{len(pages)} pages")
     transformed_assets = {}
     html_for_validation = dict(pages)
-    progress("Convert links in authored HTML and CSS assets")
+    progress("Convert links in CSS assets")
     for name, source in copied.items():
-        if source.suffix.lower() in {".html", ".htm", ".css"}:
+        if source.suffix.lower() == ".css":
             original = source.read_bytes()
             try:
                 text, encoding = decode_asset(original, config["SITE_CHARSET"])
             except BuildError as exc:
                 raise BuildError(f"cannot rewrite asset links in {source}: {exc}") from exc
-            changed = linker.css(text, name) if source.suffix.lower() == ".css" else linker.html(text, name, site_relative=False)
+            changed = linker.css(text, name)
             if changed != text:
                 transformed_assets[name] = changed.encode(encoding)
-            if source.suffix.lower() in {".html", ".htm"}:
-                html_for_validation[name] = changed
     progress("Validate local link targets")
     index.warnings.update(check_links(html_for_validation, copied, config))
     progress("Verify input files are unchanged")
@@ -284,7 +267,7 @@ def main(argv=None):
     parser.add_argument("--check", action="store_true", help="render/validate without writing public output")
     parser.add_argument("--report", help="write diagnostic JSON outside source tree")
     parser.add_argument("--exclude-category", action="append", default=[], help="explicit partial build: omit this category subtree (repeatable)")
-    parser.add_argument("--asset-dir", action="append", help="asset directory relative to source (repeatable; replaces defaults)")
+    parser.add_argument("--asset-dir", action="append", help="asset directory relative to source (repeatable; replaces default style/)")
     parser.add_argument("--max-pages", type=int, default=50000, help="maximum generated page states")
     args = parser.parse_args(argv)
     try:

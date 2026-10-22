@@ -1,10 +1,10 @@
-# rnote_static
+# rNote Static
 
 ## rNoteの静的HTML生成プログラム
 
 Woody-Rinnさんが開発したCMS「rNote」の記事XMLとskinを利用して、ローカルで静的HTMLを生成するプログラムです。rNote 0.9.7.5の動作を参照し、静的HTML生成に必要な処理をPythonで新たに実装しました。
 
-Woody-Rinnさんの開発理念「記事のXMLファイルと表示を定義するskinが残っていれば、元のrNoteが動作しなくなっても、それらをHTMLに変換することで、書き溜めた記事を活かしてサイトを継続できる」に基づいて開発したものです。
+Woody-Rinnさんの開発理念「記事のXMLファイルと表示を定義するskinが残っていれば、元のrNoteが動作しなくなっても、それらをHTMLに変換するトランスパイラがあれば、書き溜めた記事を活かしてサイトを継続できる」に基づいて開発したものです。
 
 旧rNote 0.9.7.5 の記事（entriesディレクトリ以下）・設定（rnote_config.php）・（entries以下の各ディレクトリの）skinを入力として、配信用の静的サイトを生成するPythonプログラムです。互換動作の基準は `rnote.php` 本体です。skinの見た目から意図を推測した自動修正は行いません。
 
@@ -77,9 +77,9 @@ $ python rnote_static_build.py --source "C:\path\to\legacy-site" --site-url "htt
 
 生成するHTMLは、トップ・カテゴリ・記事・ページ分割のすべてが `.htm` です。旧 `EXT_ACCESS` 設定よりこの規則を優先し、`index.html` の別名ファイルも作りません。手書きHTMLをアセットとしてコピーする場合は、元の `.html` 拡張子を維持します。ページ番号は表示パスで1始まり、旧クエリの `p` は0始まりです。
 
-内部リンクは、リンク元のファイルからの相対パスにします。たとえば `work/sub/article.htm` からトップは `../../index.htm`、`work/` は `../index.htm`、画像は `../../image/example.png` です。カテゴリへのリンクも `index.htm` まで明示し、HTTPサーバーのDirectoryIndexに依存しません。URI中の日本語や空白はエンコードします。
+内部リンクは、リンク元のファイルからの相対パスにします。たとえば `work/sub/article.htm` からトップは `../../index.htm`、`work/` は `../index.htm` です。カテゴリへのリンクも `index.htm` まで明示し、HTTPサーバーのDirectoryIndexに依存しません。URI中の日本語や空白はエンコードします。
 
-ディレクトリに `index.xml` がある場合は、その記事から生成する `index.htm` を入口として兼用します。表示内容は既存skinの `site_items` 指定に従い、別のカテゴリ一覧ファイルは生成しません。`index.xml` がない場合は、そのディレクトリの通常表示を `index.htm` に生成します。カテゴリ名による特例はありません。
+ディレクトリに `index.xml` がある場合は、その記事から生成する `index.htm` を入口として兼用します。`index.xml` がない場合は、そのディレクトリの通常表示を `index.htm` に生成します。表示内容は既存skinの `site_items` 指定に従い、別のカテゴリ一覧ファイルは生成しません。カテゴリ名による特例はありません。
 
 出力HTML内の既知の `?p=`、`?d=`、`rnote.php?u=` は実体ファイルへの相対リンクへ変換します。外部から旧クエリURLを引き続き受け付ける場合は配信先での転送設定が必要です。旧PHPのrewrite設定はコピーしません。`s`、`c` による任意skin・コンテンツ型の切り替えは対応表がない限りエラーになります。欠落した記事へのリンクから架空の記事を作る処理はありません。
 

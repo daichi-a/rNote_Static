@@ -1,7 +1,9 @@
 """Synthetic regression fixtures; no original site material is redistributed."""
 import hashlib
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from rnote_static import __version__
@@ -181,14 +183,17 @@ class Compatibility(unittest.TestCase):
         self.assertTrue(any("POST form" in w for w in self.index.warnings))
 
     def test_static_credit_uses_builder_version_without_changing_article(self):
-        self.write("entries/credit.skin", '<a href="<%=$rnote_url%>">Powered by rNote <%=$rnote_version%></a>')
+        skin = '<h4>Powered by</h4><div class="side"><a href="<%=$rnote_url%>"><img src="style/rnote-logo.gif"><br>Powered by rNote <%=$rnote_version%></a></div>'
+        self.write("entries/credit.skin", skin)
         self.write("entries/html_body.skin", '<%=$site_items%><%=$include url="entries/credit.skin"%>')
         self.entry("work/credit.xml", "Credit", "2025-01-01", "Powered by rNote 0.9.7.5")
         self.make_renderer()
         page = self.renderer.page(Context("work/credit.htm"))
-        self.assertIn(f'Powered by rNote Static {__version__}</a>', page)
+        self.assertIn(f'<h4>Powered by</h4><div class="side">\nrNote Static {__version__}\n</div>', page)
+        self.assertNotIn("rnote-logo.gif", page)
+        self.assertNotIn("http://rinn.e-site.jp/rnote/", page)
         self.assertIn('<div>Powered by rNote 0.9.7.5</div>', page)
-        self.assertEqual((self.root / "entries/credit.skin").read_text(encoding="utf-8"), '<a href="<%=$rnote_url%>">Powered by rNote <%=$rnote_version%></a>')
+        self.assertEqual((self.root / "entries/credit.skin").read_text(encoding="utf-8"), skin)
 
     def test_link_inventory_preserves_existing_broken_links_as_warnings(self):
         warnings = check_links({"work/a.htm": '<a href="/blog/work/">ok</a><img src="/blog/image/a.png"><a href="/blog/missing.htm">old</a>', "work/index.html": ""}, {"image/a.png": None}, self.config)
@@ -226,6 +231,10 @@ class Compatibility(unittest.TestCase):
         self.assertTrue((output / "index.htm").is_file())
         self.assertFalse(list(output.rglob("*.html")))
         self.assertTrue((output / "rss.rdf").is_file())
+        htaccess = (output / ".htaccess").read_text(encoding="utf-8")
+        self.assertIn("DirectoryIndex index.htm\n", htaccess)
+        self.assertNotIn("rnote.php", htaccess)
+        self.assertNotIn("RewriteRule", htaccess)
         self.assertEqual(main(["--source", str(self.root), "--output", str(output)]), 0)
         after = {str(p): hashlib.sha256(p.read_bytes()).digest() for p in self.root.rglob("*") if p.is_file()}
         self.assertEqual(before, after)
@@ -312,6 +321,24 @@ class Compatibility(unittest.TestCase):
         self.assertTrue((output / "work/index.htm").is_file())
         self.assertFalse((output / "work/_category.htm").exists())
         self.assertIn("Cover article", (output / "work/index.htm").read_text(encoding="utf-8"))
+
+    def test_verbose_progress_is_stdout_and_default_stays_quiet(self):
+        def run(*flags):
+            capture = io.StringIO()
+            with redirect_stdout(capture):
+                code = main(["--source", str(self.root), "--check", *flags])
+            self.assertEqual(code, 0)
+            return capture.getvalue()
+        quiet = run()
+        self.assertNotIn("Scan entries and skin inheritance", quiet)
+        verbose = run("-v")
+        for phase in ("load configuration", "Scan entries", "Render HTML", "Collect static assets", "Convert HTML links", "Verify input", "Check complete"):
+            self.assertIn(phase, verbose)
+        self.assertNotIn("Read source:", verbose)
+        self.assertIn("Read source:", run("-vv"))
+
+    def test_unreleased_version_is_09751(self):
+        self.assertEqual(__version__, "0.9.7.5.1")
 
 
 if __name__ == "__main__":

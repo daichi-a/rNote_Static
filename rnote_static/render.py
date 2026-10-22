@@ -231,7 +231,16 @@ class Renderer:
             raise BuildError(f"missing category: {directory}")
         text = self.skins.includes(self.skins.load(body or self.index.dirs[directory].body))
         text = self.skins.macros(text, context)
-        # Update the engine credit in skin text before inserting article content.
+        # Rewrite only the skin's engine credit, before article content is inserted.
+        credit = "rNote Static <%=$rnote_version%>"
+        def widget(match):
+            if re.search(r"<%=\$rnote_version\b|rnote-logo", match["body"]):
+                return match["heading"] + match["opening"] + "\n" + credit + "\n</div>"
+            return match[0]
+        text = re.sub(r'(?P<heading><h[1-6]\b[^>]*>\s*Powered by\s*</h[1-6]>\s*)(?P<opening><div\b[^>]*>)(?P<body>.*?)</div>', widget, text, flags=re.I | re.S)
+        text = re.sub(r'<a\b[^>]*>(.*?)</a>',
+                      lambda m: credit if re.search(r"<%=\$rnote_version\b", m[1]) and "rNote" in m[1] else m[0], text, flags=re.S)
+        text = re.sub(r"\bPowered by rNote(?: Static)?(?=\s+<%=\$rnote_version\b)", "rNote Static", text)
         text = re.sub(r"\brNote(?=\s+<%=\$rnote_version\b)", "rNote Static", text)
         fi = None
         def items(opt):

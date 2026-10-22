@@ -23,8 +23,9 @@ class Directory:
 
 
 class Index:
-    def __init__(self, config, excluded=()):
+    def __init__(self, config, excluded=(), progress=None):
         self.config = config
+        self.progress = progress or (lambda message, detail=False: None)
         self.entries = {}
         self.dirs = {}
         self.excluded = tuple(x.strip("/") + "/" for x in excluded)
@@ -38,6 +39,7 @@ class Index:
         return any(name.startswith(x) for x in self.excluded)
 
     def remember(self, path):
+        self.progress(f"Read source: {path}", detail=True)
         self.fingerprints[path] = hashlib.sha256(path.read_bytes()).digest()
 
     def walk(self, path, directory, body, item):
@@ -65,6 +67,8 @@ class Index:
                     self.warnings.add(f"{child}: missing Date; legacy filesystem ctime fallback is not portable")
                 date = parse_date(date_text, child.stat().st_ctime)
                 self.entries[name] = Entry(name, raw, title, date, directory)
+                if len(self.entries) % 50 == 0:
+                    self.progress(f"Scan entries: {len(self.entries)} articles")
                 info.count += 1
         return info.count
 
@@ -72,6 +76,9 @@ class Index:
         return not any(prefix(p, name) for p in self.config.hidden)
 
     def verify_unchanged(self):
-        for path, digest in self.fingerprints.items():
+        total = len(self.fingerprints)
+        for number, (path, digest) in enumerate(self.fingerprints.items(), 1):
             if hashlib.sha256(path.read_bytes()).digest() != digest:
                 raise BuildError(f"source changed during build: {path}")
+            if number % 100 == 0 or number == total:
+                self.progress(f"Verify source: {number}/{total} files")
